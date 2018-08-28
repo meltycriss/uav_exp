@@ -7,6 +7,8 @@ import numpy as np
 from Env import Env
 import argparse
 import rpyc
+from pyquaternion import Quaternion
+import math
 
 ###########################################
 # ATTENTION
@@ -38,23 +40,50 @@ hp_global_fps = 10
 # optitrack stuff
 ###########################################
 
-qs_bot = [queue.Queue(hp_queue_size) for _ in range(hp_n_bot)]
-qs_obs = [queue.Queue(hp_queue_size) for _ in range(hp_n_obs)]
+qs_bot_pos = [queue.Queue(hp_queue_size) for _ in range(hp_n_bot)]
+qs_bot_rot = [queue.Queue(hp_queue_size) for _ in range(hp_n_bot)]
+qs_obs_pos = [queue.Queue(hp_queue_size) for _ in range(hp_n_obs)]
+
+def quaternion_to_euler_angle(w, x, y, z):
+    t0 = +2.0 * (w * x + y * z)
+    t1 = +1.0 - 2.0 * (x * x + y * y)
+    X = math.degrees(math.atan2(t0, t1))
+    t2 = +2.0 * (w * y - z * x)
+    t2 = +1.0 if t2 > +1.0 else t2
+    t2 = -1.0 if t2 < -1.0 else t2
+    Y = math.degrees(math.asin(t2))
+    t3 = +2.0 * (w * z + x * y)
+    t4 = +1.0 - 2.0 * (y * y + z * z)
+    Z = math.degrees(math.atan2(t3, t4))
+    return X, Y, Z
 
 def receiveRigidBodyFrame(id, position, rotation):
-    global qs_bot
-    global qs_obs
+    global qs_bot_pos
+    global qs_bot_rot
+    global qs_obs_pos
+
     # robots should precede obstacles
+    # position
     if id<=hp_n_bot:
-        q = qs_bot[id-1]
+        q = qs_bot_pos[id-1]
     elif id-hp_n_bot<=hp_n_obs:
-        q = qs_obs[id-hp_n_bot-1]
+        q = qs_obs_pos[id-hp_n_bot-1]
     else: # meaningless rigid bodies
         return
 
     if q.full():
         q.get()
     q.put(position)
+
+    # rotation
+    if id<=hp_n_bot:
+        q = qs_bot_rot[id-1]
+        # rotation: x, y, z, w
+        X, Y, Z = quaternion_to_euler_angle(rotation[3], rotation[0], rotation[1], rotation[2])
+        if q.full():
+            q.get()
+        # positive for clockwise
+        q.put(Z)
 
 ###########################################
 # serial port stuff
@@ -132,11 +161,25 @@ def sendCommand(id, cmd, x, y, z, w):
 #          |                   |
 #          ----x           y----
 def adapt_to_bot_frame(v):
-    m = np.array([[0., 1.], [-1., 0.]])
-    if len(v.shape)==1:
-        return np.dot(m, v)
-    else:
-        return np.dot(m, v.transpose()).transpose()
+    mat = np.array([[0., 1.], [-1., 0.]])
+    v = v.reshape((-1, hp_dim))
+    return np.dot(mat, v.transpose()).transpose()
+    # if len(v.shape)==1:
+    #     return np.dot(mat, v)
+    # else:
+    #     return np.dot(mat, v.transpose()).transpose()
+
+def adapt_to_bot_yaw(vs, rots):
+    rots = np.array(rots) / 180.
+    rot_mat = [np.array([[np.cos(rot), -np.sin(rot)], [np.sin(rot), np.cos(rot)]]) for rot in rots]
+    vs = vs.reshape((-1, hp_dim))
+    res = []
+    for i in range(vs.shape[0]):
+        rot = rot_mat[i]
+        v = vs[i]
+        v = np.dot(rot, v)
+        res.append(v)
+    return np.array(res)
 
 def policy(o):
     v = np.zeros((hp_n_bot, hp_dim))
@@ -168,9 +211,9 @@ if __name__=='__main__':
     streamingClient.rigidBodyListener = receiveRigidBodyFrame
     streamingClient.run()
 
-    # open serial port communication
-    ser.open()
-    time.sleep(.1) # ensure serial port is ready
+    # # open serial port communication
+    # ser.open()
+    # time.sleep(.1) # ensure serial port is ready
 
     # connect remote python server
     conn = rpyc.connect("172.18.196.173", 18861)
@@ -182,13 +225,17 @@ if __name__=='__main__':
     while True:
         # fetch data from optitrack
         bot_pos = np.zeros((hp_n_bot, hp_dim))
-        for i, q in enumerate(qs_bot):
+        for i, q in enumerate(qs_bot_pos):
             p = q.get()
             bot_pos[i] = p[0:2] # only care about x and y
 
+        bot_rot = []
+        for q in qs_bot_rot:
+            rot = q.get()
+            bot_rot.append(rot)
 
         obs_pos = np.zeros((hp_n_obs, hp_dim))
-        for i, q in enumerate(qs_obs):
+        for i, q in enumerate(qs_obs_pos):
             p = q.get()
             obs_pos[i] = p[0:2] # only care about x and y
 
@@ -204,13 +251,14 @@ if __name__=='__main__':
         # v = policy(o)
         v.reshape((hp_n_bot, hp_dim))
         v = adapt_to_bot_frame(v)
+        v = adapt_to_bot_yaw(v, bot_rot)
 
-        # send command to robots
-        # for i in range(hp_n_bot):
-        #     sendCommand(i+1, CMD_CTRL, v[i][0], v[i][1], 0., 0.) # robot is 1-idx
-        for id in args.id:
-            sendCommand(id, CMD_CTRL, v[id-1][0], v[id-1][1], 0., 0.) # robot is 1-idx
-            time.sleep(1./hp_local_fps)
+        # # send command to robots
+        # # for i in range(hp_n_bot):
+        # #     sendCommand(i+1, CMD_CTRL, v[i][0], v[i][1], 0., 0.) # robot is 1-idx
+        # for id in args.id:
+        #     sendCommand(id, CMD_CTRL, v[id-1][0], v[id-1][1], 0., 0.) # robot is 1-idx
+        #     time.sleep(1./hp_local_fps)
 
         # control fps
         time.sleep(1./hp_global_fps)
