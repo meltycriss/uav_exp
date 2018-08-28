@@ -197,7 +197,7 @@ rpyc.core.protocol.DEFAULT_CONFIG['allow_pickle'] = True
 if __name__=='__main__':
     # parameter
     parser = argparse.ArgumentParser(description='ctrl')
-    parser.add_argument('--id', type=int , nargs='+', default=[i+1 for i in range(hp_n_bot)], help='relevant robot ids (default: {})'.format([i+1 for i in range(hp_n_bot)]))
+    parser.add_argument('--id', type=int , nargs='+', default=[], help='real robot ids (default: [])')
     args = parser.parse_args()
 
     for id in args.id:
@@ -235,9 +235,20 @@ if __name__=='__main__':
             p = q.get()
             obs_pos[i] = p[0:2] # only care about x and y
 
+        # for simulation
+        if not ('sim_bot_pos' in locals().keys()):
+            sim_bot_pos = bot_pos
+        else:
+            sim_bot_pos += np.expand_dims((time.time() - sim_robot_timer), axis=1) * sim_v
+
+        # mix real and sim
+        mix_bot_pos = sim_bot_pos.copy()
+        for id in args.id:
+            mix_bot_pos[id-1] = bot_pos[id-1]
+
         # get observation
-        o, done = env.step(bot_pos, obs_pos)
-        # env.render()
+        o, done = env.step(mix_bot_pos, obs_pos)
+        env.render()
 
         # compute action
         begin = time.time()
@@ -247,13 +258,30 @@ if __name__=='__main__':
         # print ("rpyc delay: {0:.2f}ms".format(1000*(time.time()-begin)))
         # v = policy(o)
         v = v.reshape((hp_n_bot, hp_dim))
+
+        # for simulation
+        sim_v = v.copy()
+        delay_ratio = .7
+        sim_v *= delay_ratio
+
         v = adapt_to_bot_frame(v)
         v = adapt_to_bot_yaw(v, bot_rot)
 
+        # for simulation
+        sim_robot_timer = np.zeros(hp_n_bot)
         # send command to robots
-        for id in args.id:
-            sendCommand(id, CMD_CTRL, v[id-1][0], v[id-1][1], 0., 0.) # robot is 1-idx
+        for i in range(hp_n_bot):
+            if i+1 in args.id:
+                sendCommand(i+1, CMD_CTRL, v[i][0], v[i][1], 0., 0.) # robot is 1-idx
+            # for simulation
+            sim_robot_timer[i] = time.time()
             time.sleep(1./hp_local_fps)
+
+        # for id in args.id:
+        #     sendCommand(id, CMD_CTRL, v[id-1][0], v[id-1][1], 0., 0.) # robot is 1-idx
+        #     # for simulation
+        #     sim_robot_timer[id-1] = time.time()
+        #     time.sleep(1./hp_local_fps)
 
         # control fps
         time.sleep(1./hp_global_fps)
