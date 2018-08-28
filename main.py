@@ -164,14 +164,12 @@ def adapt_to_bot_frame(v):
     mat = np.array([[0., 1.], [-1., 0.]])
     v = v.reshape((-1, hp_dim))
     return np.dot(mat, v.transpose()).transpose()
-    # if len(v.shape)==1:
-    #     return np.dot(mat, v)
-    # else:
-    #     return np.dot(mat, v.transpose()).transpose()
 
+# rectify yaw
+# rots: list of degrees, [0, 180] for clockwise, [-180, 0] for counter-clockwise
 def adapt_to_bot_yaw(vs, rots):
-    rots = np.array(rots) / 180.
-    rot_mat = [np.array([[np.cos(rot), -np.sin(rot)], [np.sin(rot), np.cos(rot)]]) for rot in rots]
+    rots = np.array(rots) / 180. * np.pi
+    rot_mat = [np.array([[np.cos(rot), np.sin(rot)], [-np.sin(rot), np.cos(rot)]]) for rot in rots]
     vs = vs.reshape((-1, hp_dim))
     res = []
     for i in range(vs.shape[0]):
@@ -199,7 +197,6 @@ rpyc.core.protocol.DEFAULT_CONFIG['allow_pickle'] = True
 if __name__=='__main__':
     # parameter
     parser = argparse.ArgumentParser(description='ctrl')
-    # parser.add_argument('--id', type=int , nargs='+', default=[1, 2, 3], help='relevant robot ids (default: [1, 2, 3])')
     parser.add_argument('--id', type=int , nargs='+', default=[i+1 for i in range(hp_n_bot)], help='relevant robot ids (default: {})'.format([i+1 for i in range(hp_n_bot)]))
     args = parser.parse_args()
 
@@ -211,9 +208,9 @@ if __name__=='__main__':
     streamingClient.rigidBodyListener = receiveRigidBodyFrame
     streamingClient.run()
 
-    # # open serial port communication
-    # ser.open()
-    # time.sleep(.1) # ensure serial port is ready
+    # open serial port communication
+    ser.open()
+    time.sleep(.1) # ensure serial port is ready
 
     # connect remote python server
     conn = rpyc.connect("172.18.196.173", 18861)
@@ -245,7 +242,8 @@ if __name__=='__main__':
 
         # compute action
         begin = time.time()
-        v = conn.root.get_velocity(o, 1.)
+        # v = conn.root.get_velocity(o, -1.)
+        v = conn.root.get_velocity_diag(o, 1.)
         v = rpyc.utils.classic.obtain(v)
         # print ("rpyc delay: {0:.2f}ms".format(1000*(time.time()-begin)))
         # v = policy(o)
@@ -253,18 +251,13 @@ if __name__=='__main__':
         v = adapt_to_bot_frame(v)
         v = adapt_to_bot_yaw(v, bot_rot)
 
-        # # send command to robots
-        # # for i in range(hp_n_bot):
-        # #     sendCommand(i+1, CMD_CTRL, v[i][0], v[i][1], 0., 0.) # robot is 1-idx
-        # for id in args.id:
-        #     sendCommand(id, CMD_CTRL, v[id-1][0], v[id-1][1], 0., 0.) # robot is 1-idx
-        #     time.sleep(1./hp_local_fps)
+        # send command to robots
+        for id in args.id:
+            sendCommand(id, CMD_CTRL, v[id-1][0], v[id-1][1], 0., 0.) # robot is 1-idx
+            time.sleep(1./hp_local_fps)
 
         # control fps
         time.sleep(1./hp_global_fps)
-
-        # if done:
-        #     break
 
     # close serial port communication
     ser.flush() # ensure no remaining data in buffer before closing serial port

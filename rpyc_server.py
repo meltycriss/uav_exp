@@ -15,8 +15,8 @@ class MyService(rpyc.Service):
 
     # def exposed_get_velocity(self, o, s):
     #     o = rpyc.utils.classic.obtain(o)
-    #     o = o.astype(np.float32)
-    #     s = s.astype(np.float32)
+    #     o.dtype = np.float32
+    #     s.dtype = np.float32
     #     current_obs = torch.from_numpy(o).unsqueeze(0)
     #     states = torch.from_numpy(s)
     #     masks = torch.zeros((1,1))
@@ -40,11 +40,23 @@ class MyService(rpyc.Service):
     #     state = np.zeros((1, self.actor_critic.state_size))
     #     return state
 
-    def exposed_get_velocity(self, o):
+    def exposed_get_velocity(self, o, s):
         o = rpyc.utils.classic.obtain(o)
+        s = rpyc.utils.classic.obtain(s)
         o = o.astype(np.float32)
         v = np.zeros((3, 2))
-        v[:,1] = -0.2
+        v[:,1] = .5
+        v *= s
+        return v
+
+    def exposed_get_velocity_diag(self, o, s):
+        o = rpyc.utils.classic.obtain(o)
+        s = rpyc.utils.classic.obtain(s)
+        o = o.astype(np.float32)
+        v = np.zeros((3, 2))
+        v[:,0] = .5
+        v[:,1] = .5
+        v *= s
         return v
 
     # def on_connect(self, conn):
