@@ -31,7 +31,7 @@ hp_n_bot = 3 # number of robots
 hp_n_obs = obs_r.shape[0] # number of obstacles
 hp_dim = 2
 hp_queue_size = 10 # queue buffer size
-hp_local_fps = 100
+hp_local_fps = 70
 hp_global_fps = 10
 
 ###########################################
@@ -197,10 +197,12 @@ if __name__=='__main__':
         # env.render()
 
         # compute action
-        v = conn.root.get_velocity(o)
+        begin = time.time()
+        v = conn.root.get_velocity(o, 1.)
         v = rpyc.utils.classic.obtain(v)
+        # print ("rpyc delay: {0:.2f}ms".format(1000*(time.time()-begin)))
         # v = policy(o)
-        # v.reshape((hp_n_bot, hp_dim))
+        v.reshape((hp_n_bot, hp_dim))
         v = adapt_to_bot_frame(v)
 
         # send command to robots

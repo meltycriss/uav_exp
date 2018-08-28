@@ -8,8 +8,8 @@ import argparse
 ###########################################
 
 hp_n_bot = 3 # number of robots
-hp_local_fps = 100
-hp_global_fps = 20
+hp_local_fps = 70
+hp_global_fps = 10
 
 ###########################################
 # serial port stuff
@@ -102,8 +102,9 @@ if __name__=='__main__':
     ser.open()
     # time.sleep(.1) # ensure serial port is ready
 
+    n = 5 if cmd==CMD_TAKEOFF else 10000
     # main loop
-    while True:
+    for _ in range(n):
         for id in args.id:
             sendCommand(id, cmd, 0., 0., 0., 0.) # robot is 1-idx
             time.sleep(1./hp_local_fps)
