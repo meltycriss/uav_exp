@@ -16,16 +16,19 @@ class Env(object):
         self.s_obs_r = obs_r
         self.s_goal = goal
         self.s_uav_pos = None
+        self.s_uav_v_prev = None
 
         self.get_o_env, self.vis_o_env = self._get_o_env_pose, self._vis_o_env_pose
         self.get_o_partner, self.vis_o_partner = self._get_o_partner_pose, self._vis_o_partner_pose
         self.get_o_goal, self.vis_o_goal = self._get_o_goal_pose, self._vis_o_goal_pose
+        self.get_o_prev, self.vis_o_prev = self._get_o_prev_v, self._vis_o_prev_v
 
         self.vis_init = True
 
-    def step(self, bot_pos, obs_pos):
+    def step(self, bot_pos, obs_pos, bot_v):
         self.s_uav_pos = bot_pos.reshape((self.hp_n, self.hp_dim))
         self.s_obs_pos = obs_pos.reshape((self.s_obs_r.shape[0], self.hp_dim))
+        self.s_uav_v_prev = bot_v.reshape((self.hp_n, self.hp_dim))
         self.update_observation()
         o = self.get_observation()
         centroid = np.average(self.s_uav_pos, axis=0)
@@ -46,6 +49,7 @@ class Env(object):
         self.vis_o_env()
         self.vis_o_partner()
         self.vis_o_goal()
+        self.vis_o_prev()
 
         self.vis_fig.canvas.draw()
         self.vis_fig.canvas.flush_events()
@@ -101,6 +105,7 @@ class Env(object):
         self.o_env = [self.get_o_env(i) for i in range(self.hp_n)]
         self.o_partner = [self.get_o_partner(i) for i in range(self.hp_n)]
         self.o_goal = [self.get_o_goal(i) for i in range(self.hp_n)]
+        self.o_prev = [self.get_o_prev(i) for i in range(self.hp_n)]
 
     def get_observation(self):
         o = []
@@ -109,6 +114,7 @@ class Env(object):
                 self.o_env[i].flatten(),
                 self.o_partner[i].flatten(),
                 self.o_goal[i].flatten(),
+                self.o_prev[i].flatten(),
                 ])
             o.append(o_i)
         o = np.hstack(o)
@@ -200,3 +206,19 @@ class Env(object):
         for i in range(self.hp_n):
             tmp = np.vstack((self.s_uav_pos[i], self.s_uav_pos[i] + self.o_goal[i]))
             self.vis_goal[i].set_data(tmp[:,0], tmp[:,1])
+
+    def _get_o_prev_v(self, i):
+        return self.s_uav_v_prev[i].copy()
+
+    def _vis_o_prev_v(self):
+        if self.vis_init:
+            prev_v_color = (1, 0./255., 0./255.)
+            self.vis_prev_v = []
+            for _ in range(self.hp_n):
+                line = Line2D([], [], color=prev_v_color)
+                self.vis_ax.add_line(line)
+                self.vis_prev_v.append(line)
+
+        for i in range(self.hp_n):
+            tmp = np.vstack((self.s_uav_pos[i], self.s_uav_pos[i] + self.s_uav_v_prev[i]))
+            self.vis_prev_v[i].set_data(tmp[:,0], tmp[:,1])

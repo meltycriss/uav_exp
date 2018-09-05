@@ -35,7 +35,7 @@ hp_n_obs = obs_r.shape[0] # number of obstacles
 hp_dim = 2
 hp_queue_size = 1 # queue buffer size
 hp_local_fps = 70
-hp_global_fps = 10
+hp_global_fps = 20
 
 ###########################################
 # optitrack stuff
@@ -218,8 +218,6 @@ if __name__=='__main__':
     parser.add_argument('--render', type=str2bool , default=False, help='real-time rendering (default: False)')
     args = parser.parse_args()
 
-    print (args.render)
-
     for id in args.id:
         assert id <= hp_n_bot
 
@@ -260,7 +258,7 @@ if __name__=='__main__':
         bot_v = np.zeros((hp_n_bot, hp_dim)) if counter==0 else (bot_pos - bot_pos_prev) / (time.time() - bot_timer)
         bot_pos_prev = bot_pos.copy()
         bot_timer = time.time()
-        # print (np.linalg.norm(bot_v, axis=1))
+        print (np.linalg.norm(bot_v, axis=1))
 
         # for simulation
         if counter==0:
@@ -277,17 +275,17 @@ if __name__=='__main__':
             mix_bot_v[id-1] = bot_v[id-1]
 
         # get observation
-        o, done = env.step(mix_bot_pos, obs_pos)
+        o, done = env.step(mix_bot_pos, obs_pos, mix_bot_v)
         if args.render:
             env.render()
 
         # compute action
         rpyc_timer = time.time()
-        # v = conn.root.get_velocity(o, -1)
-        # v = conn.root.get_velocity_diag(o, 1.)
-        # v = rpyc.utils.classic.obtain(v)
+        v = conn.root.get_velocity(o, -1.)
+        # v = conn.root.get_velocity_diag(o, .3/.7)
+        v = rpyc.utils.classic.obtain(v)
         # print ("rpyc delay: {0:.2f}ms".format(1000*(time.time()-rpyc_timer)))
-        v = policy(o, -1.)
+        # v = policy(o, -1.)
         v = v.reshape((hp_n_bot, hp_dim))
         # print (v)
         # for simulation
@@ -316,7 +314,8 @@ if __name__=='__main__':
         #     time.sleep(1./hp_local_fps)
 
         if done:
-            break
+            pass
+            # break
         else:
             # control fps
             time.sleep(1./hp_global_fps)
