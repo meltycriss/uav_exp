@@ -2,6 +2,7 @@ import time
 import serial
 import struct
 import argparse
+import common
 
 ###########################################
 # hyper-parameter
@@ -106,7 +107,7 @@ if __name__=='__main__':
     # main loop
     for _ in range(n):
         for id in args.id:
-            sendCommand(id, cmd, 0., 0., 0., 0.) # robot is 1-idx
+            sendCommand(common.logic2real[id], cmd, 0., 0., 0., 0.) # robot is 1-idx
             time.sleep(1./hp_local_fps)
 
         # control fps

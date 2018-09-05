@@ -9,6 +9,7 @@ import argparse
 import rpyc
 from pyquaternion import Quaternion
 import math
+import common
 
 ###########################################
 # ATTENTION
@@ -272,7 +273,7 @@ if __name__=='__main__':
         # send command to robots
         for i in range(hp_n_bot):
             if i+1 in args.id:
-                sendCommand(i+1, CMD_CTRL, v[i][0], v[i][1], 0., 0.) # robot is 1-idx
+                sendCommand(common.logic2real[i+1], CMD_CTRL, v[i][0], v[i][1], 0., 0.) # robot is 1-idx
             # for simulation
             sim_robot_timer[i] = time.time()
             time.sleep(1./hp_local_fps)

@@ -9,6 +9,7 @@ import argparse
 import rpyc
 from pyquaternion import Quaternion
 import math
+import common
 
 ###########################################
 # ATTENTION
@@ -179,10 +180,11 @@ def adapt_to_bot_yaw(vs, rots):
         res.append(v)
     return np.array(res)
 
-def policy(o):
+def policy(o, sign):
     v = np.zeros((hp_n_bot, hp_dim))
-    # v[:,0] = -0.7
-    v[:,1] = -0.7
+    # v[:,0] = 0.2
+    v[:,1] = 0.7
+    v *= sign
     return v
 
 ###########################################
@@ -217,6 +219,7 @@ if __name__=='__main__':
 
     env = Env(obs_r, goal, bound, uav_r, hp_n_bot)
 
+    counter = 0
     # main loop
     while True:
         # fetch data from optitrack
@@ -240,23 +243,26 @@ if __name__=='__main__':
         # env.render()
 
         # compute action
-        begin = time.time()
-        v = conn.root.get_velocity(o, -1.)
-        # v = conn.root.get_velocity_diag(o, 1.)
-        v = rpyc.utils.classic.obtain(v)
-        # print ("rpyc delay: {0:.2f}ms".format(1000*(time.time()-begin)))
-        # v = policy(o)
+        # # begin = time.time()
+        # v = conn.root.get_velocity(o, 1.)
+        # # v = conn.root.get_velocity_diag(o, 1.)
+        # v = rpyc.utils.classic.obtain(v)
+        # # print ("rpyc delay: {0:.2f}ms".format(1000*(time.time()-begin)))
+        v = policy(o, 1.)
         v = v.reshape((hp_n_bot, hp_dim))
+        # if counter % 2 == 0:
+        #     v[:,0] *= -1.
         v = adapt_to_bot_frame(v)
         v = adapt_to_bot_yaw(v, bot_rot)
 
         # send command to robots
         for id in args.id:
-            sendCommand(id, CMD_CTRL, v[id-1][0], v[id-1][1], 0., 0.) # robot is 1-idx
+            sendCommand(common.logic2real[id], CMD_CTRL, v[id-1][0], v[id-1][1], 0., 0.) # robot is 1-idx
             time.sleep(1./hp_local_fps)
 
         # control fps
         time.sleep(1./hp_global_fps)
+        counter += 1
 
     # close serial port communication
     ser.flush() # ensure no remaining data in buffer before closing serial port
