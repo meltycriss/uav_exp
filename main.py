@@ -22,7 +22,7 @@ import common
 # task specification
 ###########################################
 uav_r = .3
-obs_r = np.array([.4, .3]) # ORDER IS IMPORTANT
+obs_r = np.array([.4, .4]) # ORDER IS IMPORTANT
 goal = np.array([0., 2.])
 bound = np.array([2., 4.]) # range of the map
 
@@ -33,7 +33,7 @@ bound = np.array([2., 4.]) # range of the map
 hp_n_bot = 3 # number of robots
 hp_n_obs = obs_r.shape[0] # number of obstacles
 hp_dim = 2
-hp_queue_size = 10 # queue buffer size
+hp_queue_size = 1 # queue buffer size
 hp_local_fps = 70
 hp_global_fps = 10
 
@@ -180,6 +180,13 @@ def adapt_to_bot_yaw(vs, rots):
         res.append(v)
     return np.array(res)
 
+def clip_to_max(vs, maximum):
+    vs = vs.reshape((-1, hp_dim)).copy()
+    mag = np.linalg.norm(vs, axis=1)
+    mask = mag > maximum
+    vs[mask] = (vs / np.expand_dims(mag, axis=1) * maximum)[mask]
+    return vs
+
 def policy(o, sign):
     v = np.zeros((hp_n_bot, hp_dim))
     # v[:,0] = 0.2
@@ -199,8 +206,19 @@ rpyc.core.protocol.DEFAULT_CONFIG['allow_pickle'] = True
 if __name__=='__main__':
     # parameter
     parser = argparse.ArgumentParser(description='ctrl')
-    parser.add_argument('--id', type=int , nargs='+', default=[i+1 for i in range(hp_n_bot)], help='relevant robot ids (default: {})'.format([i+1 for i in range(hp_n_bot)]))
+    def str2bool(v):
+        if v.lower() in ('yes', 'true', 't', 'y', '1'):
+            return True
+        elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+            return False
+        else:
+            raise argparse.ArgumentTypeError('Boolean value expected.')
+    # parser.add_argument('--id', type=int , nargs='+', default=[i+1 for i in range(hp_n_bot)], help='relevant robot ids (default: {})'.format([i+1 for i in range(hp_n_bot)]))
+    parser.add_argument('--id', type=int , nargs='+', default=[], help='relevant robot ids (default: [])')
+    parser.add_argument('--render', type=str2bool , default=False, help='real-time rendering (default: False)')
     args = parser.parse_args()
+
+    print (args.render)
 
     for id in args.id:
         assert id <= hp_n_bot
@@ -215,7 +233,7 @@ if __name__=='__main__':
     time.sleep(.1) # ensure serial port is ready
 
     # connect remote python server
-    conn = rpyc.connect("172.18.196.173", 18861)
+    conn = rpyc.connect("172.18.197.179", 18861)
 
     env = Env(obs_r, goal, bound, uav_r, hp_n_bot)
 
@@ -238,31 +256,71 @@ if __name__=='__main__':
             p = q.get()
             obs_pos[i] = p[0:2] # only care about x and y
 
+        # compute current velocity
+        bot_v = np.zeros((hp_n_bot, hp_dim)) if counter==0 else (bot_pos - bot_pos_prev) / (time.time() - bot_timer)
+        bot_pos_prev = bot_pos.copy()
+        bot_timer = time.time()
+        # print (np.linalg.norm(bot_v, axis=1))
+
+        # for simulation
+        if counter==0:
+            sim_bot_pos = bot_pos
+            sim_v = np.zeros((hp_n_bot, hp_dim))
+        else:
+            sim_bot_pos += (time.time() - sim_bot_timer) * sim_v
+
+        # mix real and sim
+        mix_bot_pos = sim_bot_pos.copy()
+        mix_bot_v = sim_v.copy()
+        for id in args.id:
+            mix_bot_pos[id-1] = bot_pos[id-1]
+            mix_bot_v[id-1] = bot_v[id-1]
+
         # get observation
-        o, done = env.step(bot_pos, obs_pos)
-        # env.render()
+        o, done = env.step(mix_bot_pos, obs_pos)
+        if args.render:
+            env.render()
 
         # compute action
-        # # begin = time.time()
-        # v = conn.root.get_velocity(o, 1.)
-        # # v = conn.root.get_velocity_diag(o, 1.)
+        rpyc_timer = time.time()
+        # v = conn.root.get_velocity(o, -1)
+        # v = conn.root.get_velocity_diag(o, 1.)
         # v = rpyc.utils.classic.obtain(v)
-        # # print ("rpyc delay: {0:.2f}ms".format(1000*(time.time()-begin)))
-        v = policy(o, 1.)
+        # print ("rpyc delay: {0:.2f}ms".format(1000*(time.time()-rpyc_timer)))
+        v = policy(o, -1.)
         v = v.reshape((hp_n_bot, hp_dim))
+        # print (v)
+        # for simulation
+        sim_v = v.copy()
+        delay_ratio = .7
+        sim_v *= delay_ratio
         # if counter % 2 == 0:
         #     v[:,0] *= -1.
         v = adapt_to_bot_frame(v)
         v = adapt_to_bot_yaw(v, bot_rot)
+        v = clip_to_max(v, .7)
+
 
         # send command to robots
-        for id in args.id:
-            sendCommand(common.logic2real[id], CMD_CTRL, v[id-1][0], v[id-1][1], 0., 0.) # robot is 1-idx
+        for i in range(hp_n_bot):
+            if i+1 in args.id:
+                sendCommand(common.logic2real[i+1], CMD_CTRL, v[i][0], v[i][1], 0., 0.) # robot is 1-idx
             time.sleep(1./hp_local_fps)
 
-        # control fps
-        time.sleep(1./hp_global_fps)
-        counter += 1
+        # for simulation
+        sim_bot_timer = time.time()
+
+        # # send command to robots
+        # for id in args.id:
+        #     sendCommand(common.logic2real[id], CMD_CTRL, v[id-1][0], v[id-1][1], 0., 0.) # robot is 1-idx
+        #     time.sleep(1./hp_local_fps)
+
+        if done:
+            break
+        else:
+            # control fps
+            time.sleep(1./hp_global_fps)
+            counter += 1
 
     # close serial port communication
     ser.flush() # ensure no remaining data in buffer before closing serial port
