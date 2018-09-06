@@ -120,13 +120,30 @@ class Env(object):
         o = np.hstack(o)
         return o
 
+    def local2global(self, local_v):
+        global_v = local_v.reshape((self.hp_n, self.hp_dim)).copy()
+        for i in range(self.hp_n):
+            inv_rot_mat = np.linalg.inv(self._get_rot_mat(i))
+            global_v[i] = np.dot(inv_rot_mat, global_v[i])
+        return global_v
+
+    def _get_rot_mat(self, i):
+        v = self.s_goal - self.s_uav_pos[i]
+        norm = np.linalg.norm(v)
+        if norm < 1e-5:
+            return np.array([[1., 0.], [0., 1.]])
+        else:
+            sin_theta = -v[0] / norm
+            cos_theta = v[1] / norm
+            return np.array([[cos_theta, sin_theta], [-sin_theta, cos_theta]])
+
     def _get_o_env_pose(self, i):
         p = self.s_uav_pos[i]
         # normalize bounds and normal obstacles
         bound_pos = np.array([p for _ in range(2*self.hp_dim)]) # surface # is 2*dim
-        for i in range(self.hp_dim):
-            bound_pos[2*i][i] = -self.hp_bound[i]
-            bound_pos[2*i+1][i] = self.hp_bound[i]
+        for di in range(self.hp_dim):
+            bound_pos[2*di][di] = -self.hp_bound[di]
+            bound_pos[2*di+1][di] = self.hp_bound[di]
         bound_r = np.zeros(bound_pos.shape[0])
 
         rela_pos = np.vstack([self.s_obs_pos-p, bound_pos-p])
@@ -141,7 +158,11 @@ class Env(object):
         res_pos[:order_mask.shape[0]] = rela_pos[order_mask]
         res_r[:order_mask.shape[0]] = r[order_mask]
 
-        return np.hstack([res_pos, np.expand_dims(res_r, axis=1)])
+        rot_mat = self._get_rot_mat(i)
+        local_res_pos = np.dot(rot_mat, res_pos.T)
+
+        # return np.hstack([res_pos, np.expand_dims(res_r, axis=1)])
+        return np.hstack([local_res_pos.T, np.expand_dims(res_r, axis=1)])
 
     def _vis_o_env_pose(self):
         if self.vis_init:
@@ -155,7 +176,8 @@ class Env(object):
                 self.vis_env.append(lines)
 
         for i in range(self.hp_n):
-            obs_rela_pos = self.o_env[i][:,:-1]
+            inv_rot_mat = np.linalg.inv(self._get_rot_mat(i))
+            obs_rela_pos = np.dot(inv_rot_mat, self.o_env[i][:,:-1].T).T
             obs_r = self.o_env[i][:,-1]
             norm = np.linalg.norm(obs_rela_pos, axis=1)
             dir_vec = obs_rela_pos / np.expand_dims(norm, axis=1)
@@ -169,7 +191,11 @@ class Env(object):
         p = self.s_uav_pos[i]
         res = self.s_uav_pos - p
         res = np.delete(res, i, 0)
-        return res
+
+        rot_mat = self._get_rot_mat(i)
+        local_res = np.dot(rot_mat, res.T)
+        # return res
+        return local_res.T
 
     def _vis_o_partner_pose(self):
         if self.vis_init:
@@ -184,7 +210,8 @@ class Env(object):
                 self.vis_partner.append(lines)
 
         for i in range(self.hp_n):
-            uav_rela_pos = self.o_partner[i]
+            inv_rot_mat = np.linalg.inv(self._get_rot_mat(i))
+            uav_rela_pos = np.dot(inv_rot_mat, self.o_partner[i].T).T
             for j in range(self.hp_n-1):
                 tmp = np.vstack((self.s_uav_pos[i], self.s_uav_pos[i]+uav_rela_pos[j]))
                 self.vis_partner[i][j].set_data(tmp[:,0], tmp[:,1])
@@ -192,7 +219,11 @@ class Env(object):
     def _get_o_goal_pose(self, i):
         p = self.s_uav_pos[i]
         res = self.s_goal - p
-        return res
+
+        rot_mat = self._get_rot_mat(i)
+        local_res = np.dot(rot_mat, res)
+        # return res
+        return local_res
 
     def _vis_o_goal_pose(self):
         if self.vis_init:
@@ -204,11 +235,18 @@ class Env(object):
                 self.vis_goal.append(line)
 
         for i in range(self.hp_n):
-            tmp = np.vstack((self.s_uav_pos[i], self.s_uav_pos[i] + self.o_goal[i]))
+            inv_rot_mat = np.linalg.inv(self._get_rot_mat(i))
+            tmp = np.vstack((self.s_uav_pos[i], self.s_uav_pos[i] + np.dot(inv_rot_mat, self.o_goal[i])))
             self.vis_goal[i].set_data(tmp[:,0], tmp[:,1])
 
     def _get_o_prev_v(self, i):
-        return self.s_uav_v_prev[i].copy()
+        res = self.s_uav_v_prev[i].copy()
+
+        rot_mat = self._get_rot_mat(i)
+        local_res = np.dot(rot_mat, res)
+
+        # return self.s_uav_v_prev[i].copy()
+        return local_res
 
     def _vis_o_prev_v(self):
         if self.vis_init:
@@ -220,5 +258,6 @@ class Env(object):
                 self.vis_prev_v.append(line)
 
         for i in range(self.hp_n):
-            tmp = np.vstack((self.s_uav_pos[i], self.s_uav_pos[i] + self.s_uav_v_prev[i]))
+            inv_rot_mat = np.linalg.inv(self._get_rot_mat(i))
+            tmp = np.vstack((self.s_uav_pos[i], self.s_uav_pos[i] + np.dot(inv_rot_mat, self.o_prev[i])))
             self.vis_prev_v[i].set_data(tmp[:,0], tmp[:,1])

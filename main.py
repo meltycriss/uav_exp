@@ -22,8 +22,8 @@ import common
 # task specification
 ###########################################
 uav_r = .3
-obs_r = np.array([.4, .4]) # ORDER IS IMPORTANT
-goal = np.array([0., 2.])
+obs_r = np.array([.35, .35]) # ORDER IS IMPORTANT
+goal = np.array([0., 2.5])
 bound = np.array([2., 4.]) # range of the map
 
 ###########################################
@@ -35,7 +35,7 @@ hp_n_obs = obs_r.shape[0] # number of obstacles
 hp_dim = 2
 hp_queue_size = 1 # queue buffer size
 hp_local_fps = 70
-hp_global_fps = 20
+hp_global_fps = 10
 
 ###########################################
 # optitrack stuff
@@ -267,17 +267,17 @@ if __name__=='__main__':
             sim_v = np.zeros((hp_n_bot, hp_dim))
         else:
             sim_bot_pos += (time.time() - sim_bot_timer) * sim_v
-            # sim_bot_pos += .5 / .7 * sim_v
+            # sim_bot_pos += .5 / .7 * sim_v # neglect real latency
 
         # mix real and sim
         mix_bot_pos = sim_bot_pos.copy()
         mix_bot_v = sim_v.copy()
-        # mix_bot_v = sim_v.copy() / .7
+        # mix_bot_v = sim_v.copy() / .7 # neglect real latency
         for id in args.id:
             mix_bot_pos[id-1] = bot_pos[id-1]
             mix_bot_v[id-1] = bot_v[id-1]
 
-        # get observation
+        # # get observation
         o, done = env.step(mix_bot_pos, obs_pos, mix_bot_v)
         if args.render:
             env.render()
@@ -289,8 +289,9 @@ if __name__=='__main__':
         # v = conn.root.get_velocity_diag(o, .3/.7)
         v = rpyc.utils.classic.obtain(v)
         # print ("rpyc delay: {0:.2f}ms".format(1000*(time.time()-rpyc_timer)))
-        # v = policy(o, -1.)
+        # v = policy(o, 1.)
         v = v.reshape((hp_n_bot, hp_dim))
+        v = env.local2global(v) # action from policy bases on local frame
         v = clip_to_max(v, .7)
         # print (v)
         # for simulation
