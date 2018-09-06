@@ -232,6 +232,7 @@ if __name__=='__main__':
 
     # connect remote python server
     conn = rpyc.connect("172.18.197.179", 18861)
+    s = conn.root.get_init_state()
 
     env = Env(obs_r, goal, bound, uav_r, hp_n_bot)
 
@@ -258,7 +259,7 @@ if __name__=='__main__':
         bot_v = np.zeros((hp_n_bot, hp_dim)) if counter==0 else (bot_pos - bot_pos_prev) / (time.time() - bot_timer)
         bot_pos_prev = bot_pos.copy()
         bot_timer = time.time()
-        print (np.linalg.norm(bot_v, axis=1))
+        # print (np.linalg.norm(bot_v, axis=1))
 
         # for simulation
         if counter==0:
@@ -266,10 +267,12 @@ if __name__=='__main__':
             sim_v = np.zeros((hp_n_bot, hp_dim))
         else:
             sim_bot_pos += (time.time() - sim_bot_timer) * sim_v
+            # sim_bot_pos += .5 / .7 * sim_v
 
         # mix real and sim
         mix_bot_pos = sim_bot_pos.copy()
         mix_bot_v = sim_v.copy()
+        # mix_bot_v = sim_v.copy() / .7
         for id in args.id:
             mix_bot_pos[id-1] = bot_pos[id-1]
             mix_bot_v[id-1] = bot_v[id-1]
@@ -281,12 +284,14 @@ if __name__=='__main__':
 
         # compute action
         rpyc_timer = time.time()
-        v = conn.root.get_velocity(o, -1.)
+        v, s = conn.root.get_velocity(o, s)
+        # v = conn.root.get_velocity(o, -1.)
         # v = conn.root.get_velocity_diag(o, .3/.7)
         v = rpyc.utils.classic.obtain(v)
         # print ("rpyc delay: {0:.2f}ms".format(1000*(time.time()-rpyc_timer)))
         # v = policy(o, -1.)
         v = v.reshape((hp_n_bot, hp_dim))
+        v = clip_to_max(v, .7)
         # print (v)
         # for simulation
         sim_v = v.copy()
@@ -296,7 +301,6 @@ if __name__=='__main__':
         #     v[:,0] *= -1.
         v = adapt_to_bot_frame(v)
         v = adapt_to_bot_yaw(v, bot_rot)
-        v = clip_to_max(v, .7)
 
 
         # send command to robots
@@ -314,8 +318,8 @@ if __name__=='__main__':
         #     time.sleep(1./hp_local_fps)
 
         if done:
-            pass
-            # break
+            # pass
+            break
         else:
             # control fps
             time.sleep(1./hp_global_fps)
