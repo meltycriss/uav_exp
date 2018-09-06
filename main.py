@@ -22,8 +22,8 @@ import common
 # task specification
 ###########################################
 uav_r = .3
-obs_r = np.array([.35, .35]) # ORDER IS IMPORTANT
-goal = np.array([0., 2.5])
+obs_r = np.array([.4, .4, .4]) # ORDER IS IMPORTANT
+goal = np.array([0., 3.])
 bound = np.array([2., 4.]) # range of the map
 
 ###########################################
@@ -34,8 +34,8 @@ hp_n_bot = 3 # number of robots
 hp_n_obs = obs_r.shape[0] # number of obstacles
 hp_dim = 2
 hp_queue_size = 1 # queue buffer size
-hp_local_fps = 70
-hp_global_fps = 10
+hp_local_fps = 50
+hp_global_fps = 15
 
 ###########################################
 # optitrack stuff
@@ -266,13 +266,13 @@ if __name__=='__main__':
             sim_bot_pos = bot_pos
             sim_v = np.zeros((hp_n_bot, hp_dim))
         else:
-            sim_bot_pos += (time.time() - sim_bot_timer) * sim_v
-            # sim_bot_pos += .5 / .7 * sim_v # neglect real latency
+            # sim_bot_pos += (time.time() - sim_bot_timer) * sim_v
+            sim_bot_pos += .5 / .7 * sim_v # neglect real latency
 
         # mix real and sim
         mix_bot_pos = sim_bot_pos.copy()
-        mix_bot_v = sim_v.copy()
-        # mix_bot_v = sim_v.copy() / .7 # neglect real latency
+        # mix_bot_v = sim_v.copy()
+        mix_bot_v = sim_v.copy() / .7 # neglect real latency
         for id in args.id:
             mix_bot_pos[id-1] = bot_pos[id-1]
             mix_bot_v[id-1] = bot_v[id-1]
@@ -292,7 +292,7 @@ if __name__=='__main__':
         # v = policy(o, 1.)
         v = v.reshape((hp_n_bot, hp_dim))
         v = env.local2global(v) # action from policy bases on local frame
-        v = clip_to_max(v, .7)
+        v = clip_to_max(v, .5)
         # print (v)
         # for simulation
         sim_v = v.copy()
@@ -303,12 +303,14 @@ if __name__=='__main__':
         v = adapt_to_bot_frame(v)
         v = adapt_to_bot_yaw(v, bot_rot)
 
-
+        if counter > 0:
+            print ("real fps: {0:.0f}Hz".format(1./(time.time()-fps_timer)))
         # send command to robots
         for i in range(hp_n_bot):
             if i+1 in args.id:
                 sendCommand(common.logic2real[i+1], CMD_CTRL, v[i][0], v[i][1], 0., 0.) # robot is 1-idx
             time.sleep(1./hp_local_fps)
+        fps_timer = time.time()
 
         # for simulation
         sim_bot_timer = time.time()
@@ -317,6 +319,7 @@ if __name__=='__main__':
         # for id in args.id:
         #     sendCommand(common.logic2real[id], CMD_CTRL, v[id-1][0], v[id-1][1], 0., 0.) # robot is 1-idx
         #     time.sleep(1./hp_local_fps)
+
 
         if done:
             # pass

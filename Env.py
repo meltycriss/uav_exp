@@ -9,7 +9,7 @@ class Env(object):
         self.hp_n_nearest_obs = 3
         self.hp_n = uav_n
         self.hp_dim = 2
-        self.hp_thres = .2
+        self.hp_thres = .3
         self.hp_uav_r = uav_r
 
         self.s_obs_pos = None
